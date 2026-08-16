@@ -47,4 +47,70 @@ namespace FarmTycoon.Buildings
                     PhaseProgress = 0f;
                     CurrentPhase = ConstructionPhaseHelper.GetNextPhase(CurrentPhase);
                     if (IsCompleted)
-                       
+                        EventSystem.Instance.Publish(new BuildingConstructionCompletedEvent(InstanceId, Name));
+                }
+            }
+            else
+            {
+                _conditionValue -= 0.1f;
+                _conditionValue = Math.Max(0f, _conditionValue);
+                UpdateConditionState();
+            }
+        }
+
+        public bool Upgrade()
+        {
+            if (!IsCompleted || CurrentLevel >= _data.MaxLevel) return false;
+            float upgradeCost = CalculateUpgradeCost();
+            if (!GameManager.Instance.TrySpendMoney(upgradeCost)) return false;
+            CurrentLevel++;
+            CurrentCapacity = _data.BaseCapacity * MathF.Pow(_data.UpgradeCapacityMultiplier, CurrentLevel - 1);
+            DailyMaintenanceCost *= 1.2f;
+            EventSystem.Instance.Publish(new BuildingUpgradedEvent(InstanceId, CurrentLevel));
+            return true;
+        }
+
+        public void Maintain()
+        {
+            _conditionValue = Math.Min(100f, _conditionValue + 30f);
+            UpdateConditionState();
+        }
+
+        public float Demolish()
+        {
+            float recovered = _data.MaterialCost * 0.3f * (_conditionValue / 100f);
+            EventSystem.Instance.Publish(new BuildingDemolishedEvent(InstanceId, recovered));
+            return recovered;
+        }
+
+        public float CalculateUpgradeCost() => _data.MaterialCost * MathF.Pow(_data.UpgradeCostMultiplier, CurrentLevel);
+
+        public float GetEffectiveCapacity()
+        {
+            float conditionMultiplier = Condition switch
+            {
+                BuildingCondition.New => 1.0f,
+                BuildingCondition.Good => 0.95f,
+                BuildingCondition.Fair => 0.85f,
+                BuildingCondition.Poor => 0.7f,
+                BuildingCondition.Worn => 0.6f,
+                BuildingCondition.Critical => 0.5f,
+                _ => 1.0f
+            };
+            return CurrentCapacity * conditionMultiplier;
+        }
+
+        private void UpdateConditionState()
+        {
+            Condition = _conditionValue switch
+            {
+                >= 90f => BuildingCondition.New,
+                >= 70f => BuildingCondition.Good,
+                >= 50f => BuildingCondition.Fair,
+                >= 20f => BuildingCondition.Poor,
+                > 0f => BuildingCondition.Worn,
+                _ => BuildingCondition.Critical
+            };
+        }
+    }
+}
